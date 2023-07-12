@@ -1,6 +1,7 @@
-from fastapi import FastAPI #Importando a função FastAPI
+from fastapi import FastAPI, Query #Importando a função FastAPI
 from enum import Enum #Importando a função Enum
 from pydantic import BaseModel
+from typing import Annotated
 
 
 app = FastAPI() #Criando o ponto de interação da API
@@ -93,7 +94,7 @@ class Item(BaseModel):
 
 @app.post("/items/")
 def create_item(item:Item):
-    item_dict = item.model_dump(dict) #dict está obsoleto
+    item_dict = item.model_dump() #dict está obsoleto
     if item.tax:
         price_with_tax = item.tax + item.price
         item_dict.update({"Price with Tax" : price_with_tax})
@@ -103,3 +104,11 @@ def create_item(item:Item):
 def create_item(item_id: int, item: Item):
     return {"item_id": item_id, **item.model_dump()}
 
+#Additional validation
+#Só tem como usar o query com o Annotated? Não, fica melhor usar com o Annotated
+@app.get("/query/")
+def read_query(q : Annotated[str | None, Query(max_length=50)] = None): #Restrição de tamanho -> Máximo de 50
+    results = {"items": [{"item_id": "Foo"}, {"item_id": "Bar"}]}
+    if q:
+        results.update({"q": q})
+    return results
