@@ -1,5 +1,7 @@
 from fastapi import FastAPI #Importando a função FastAPI
 from enum import Enum #Importando a função Enum
+from pydantic import BaseModel
+
 
 app = FastAPI() #Criando o ponto de interação da API
 
@@ -78,3 +80,26 @@ def read_user_item(
     if not short:
         item.update({"Description" : "This is an amazing item that has a long description"})
     return item
+
+
+#Request Body -> envia os dados para os cliente pela API
+#Ao invés de get usa-se Post
+
+class Item(BaseModel):
+    name : str
+    description : str | None = None
+    price : float
+    tax : float | None = None
+
+@app.post("/items/")
+def create_item(item:Item):
+    item_dict = item.model_dump(dict) #dict está obsoleto
+    if item.tax:
+        price_with_tax = item.tax + item.price
+        item_dict.update({"Price with Tax" : price_with_tax})
+    return item
+
+@app.put("/items/{item_id}")
+def create_item(item_id: int, item: Item):
+    return {"item_id": item_id, **item.model_dump()}
+
