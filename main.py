@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Query #Importando a função FastAPI
-from enum import Enum #Importando a função Enum
-from pydantic import BaseModel
-from typing import Annotated
+from fastapi import FastAPI, Query, Path, Body, Cookie, Form, Depends
+from enum import Enum 
+from pydantic import BaseModel, Field, HttpUrl
+from typing import Annotated, Any
+from fastapi.responses import RedirectResponse
 
 
 app = FastAPI() #Criando o ponto de interação da API
@@ -10,25 +11,25 @@ app = FastAPI() #Criando o ponto de interação da API
 def root(): #Definindo a função do path
     return {"mensage": "Hello World"} #retorno da função que será mostrado no path "/"
 
-@app.get("/items/{items_id}") #path /items/items_id(que seria um número)
+@app.get("/items/{items_id}", tags=["item"]) #path /items/items_id(que seria um número)
 def read_item(items_id : int): #parametro da função
     return {"Item Id" : items_id} #retorno
 
-@app.get("/users/me") #Metódo específico definido antes do metódo geral
+@app.get("/users/me", tags=["user"]) #Metódo específico definido antes do metódo geral
 def read_user_me():
     return {"User id":"The curent user"} #Por conta disso ao inves de de retornar User id : me retorna o que está dentro da função
 
-@app.get("/users/{user_id}") #Metódo generalizado
+@app.get("/users/{user_id}", tags=["user"]) #Metódo generalizado
 def read_user(user_id : str):
     return {"User id" : user_id}
 
 #Dado um mesmo caminho, a função definida primeiramente se sobressai
 
-@app.get("/users") 
+@app.get("/users/") 
 def read_users():
     return ["Yago", "Maia"]
 
-@app.get("/users")
+@app.get("/users/", deprecated=True)
 def read_users_2():
     return ["Rene", "Veloso"]
 
@@ -53,13 +54,13 @@ def read_file(file_path : str):
 
 fake_items_db = [{"item_name": "Foo"}, {"item_name": "Bar"}, {"item_name": "Baz"}]
 
-@app.get("/items/")
+@app.get("/items/", tags=["item"])
 def read_items2(skip: int = 0, limit : int = 10):
     return fake_items_db[skip: skip + limit]
 
 #Parametros Opcionais
 
-@app.get("/teste/{teste_id}")
+@app.get("/teste/{teste_id}", tags=["item"])
 def read_teste(teste_id : str, q : str | None = None, short : bool = False):
     teste = {"Teste Id" : teste_id}
     if q:
@@ -68,7 +69,7 @@ def read_teste(teste_id : str, q : str | None = None, short : bool = False):
         teste.update({"Description" : "This is an amazing item that has a long description"})
     return teste
 
-@app.get("/users/{user_id}/items/{item_id}")
+@app.get("/users/{user_id}/items/{item_id}", tags=["user", "item"])
 def read_user_item(
     user_id : int,
     item_id : str,
@@ -82,7 +83,6 @@ def read_user_item(
         item.update({"Description" : "This is an amazing item that has a long description"})
     return item
 
-
 #Request Body -> envia os dados para os cliente pela API
 #Ao invés de get usa-se Post
 
@@ -92,7 +92,19 @@ class Item(BaseModel):
     price : float
     tax : float | None = None
 
-@app.post("/items/")
+@app.post("/items/", 
+            tags=["item"],
+            summary="Create an item",
+            description="""
+Create an item with all the information:
+
+- **name**: each item must have a name
+- **description**: a long description
+- **price**: required
+- **tax**: if the item doesn't have tax, you can omit this
+- **tags**: a set of unique tag strings for this item
+    """
+        )
 def create_item(item:Item):
     item_dict = item.model_dump() #dict está obsoleto
     if item.tax:
@@ -100,15 +112,162 @@ def create_item(item:Item):
         item_dict.update({"Price with Tax" : price_with_tax})
     return item
 
-@app.put("/items/{item_id}")
+@app.put("/items/{item_id}", tags=["item"]) #Put junção do get com post
 def create_item(item_id: int, item: Item):
     return {"item_id": item_id, **item.model_dump()}
 
 #Additional validation
-#Só tem como usar o query com o Annotated? Não, fica melhor usar com o Annotated
+#Só tem como usar o query com o Annotated? -> Não, fica melhor usar com o Annotated
+
 @app.get("/query/")
-def read_query(q : Annotated[str | None, Query(max_length=50)] = None): #Restrição de tamanho -> Máximo de 50
+def read_query(q : Annotated[str | None, Query(max_length=50, min_length=3)] = None): #Restrição de tamanho -> Máximo de 50
     results = {"items": [{"item_id": "Foo"}, {"item_id": "Bar"}]}
     if q:
         results.update({"q": q})
     return results
+
+#Annotated ge(greater or equal), le(less or equal) gt(greater than), lt(less than) funciona para float também
+
+@app.get("/path/{item_id}")
+def read_item4(
+    item_id : Annotated[int, Path(title="The id of the item to get", ge=5)],
+    q : Annotated[str | None, Query(alias="item-query")] = None,
+    size : Annotated[float, Query(ge=0, lt=10)] = None
+):
+    results = {"item_id": item_id}
+    if q:
+        results.update({"q" : q})
+    return results
+
+class User(BaseModel):
+    username : str
+    full_name :str | None = None
+
+@app.put("/put/") 
+def update_item(
+    item_id : int, 
+    item : Annotated[Item, Body(embed=False)], 
+    user: User,
+    importance : Annotated[int, Body()] #Body funciona semelhante ao Query e ao Path em questão dos parametros
+):
+    results = {"item_id" : item_id, "item" : item, "user" : user}
+    return results
+
+class Field(BaseModel): #Field funciona da mesma forma que o Path, Query e Body
+    name : str
+    description : str | None = Field(
+        default = None, title = "the description of the item", max_length = 300
+    )
+    price : float
+    tax : float | None = None
+
+class Image(BaseModel):
+    url : HttpUrl #Validador de URL
+    name : str
+
+class Sale(BaseModel): #Field funciona da mesma forma que o Path, Query e Body
+    name : str
+    description : str | None = None
+    price : float
+    tax : float | None = None
+    tags: list[str] = []
+    image : Image | None = None
+    images : list[Image] | None = None
+
+class Offer(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    items: list[Sale]
+
+@app.post("/offers/", tags=["item"])
+def create_offer(offer:Offer) -> Offer:
+    return offer
+
+#Dentro das funções Body, Query, Field é possível colocar o parametro example
+
+#Pode atribuir tipos de dados mais complexos, como datatime e entre outros
+
+#Cookie Parameters
+
+@app.get("/cookie/")
+def read_cookie(ads_id: Annotated[str | None, Cookie()] = None):
+    return {"ads_id": ads_id}
+
+class UserIn(BaseModel):
+    username: str
+    password: str
+    email: str
+    full_name: str | None = None
+
+
+class UserOut(BaseModel):
+    username: str
+    email: str
+    full_name: str | None = None
+
+#Extra Models -> Exemplo:
+#Modelo de Entrada, Modelo de Saída e Modelo para o Banco
+
+class UserInDB(BaseModel):
+    username: str
+    hashed_password: str
+    email: str
+    full_name: str | None = None
+
+def fake_password_hasher(raw_password : str):
+    return "supersecret" + raw_password
+
+def fake_save_user(user_in: UserIn):
+    hashed_password = fake_password_hasher(user_in.password)
+    user_in_db = UserInDB(**user_in.model_dump(), hashed_password=hashed_password) #Quando se coloca **em um dicionário extrai todos os campos como parametro
+    """"
+    Exemplo:
+    UserInDB(
+    username="john",
+    password="secret",
+    email="john.doe@example.com",
+    full_name=None,
+    )
+    """
+    print("User saved! ..not really")
+    return user_in_db
+
+@app.post("/db/", response_model=UserOut)
+async def create_user(user_in: UserIn):
+    user_saved = fake_save_user(user_in)
+    return user_saved
+
+"""Para melhorar o funcionamento da API usa-se um modelo base e passa o campo adiconal
+class UserBase(BaseModel):
+    username: str
+    email: EmailStr
+    full_name: str | None = None
+
+class UserIn(UserBase):
+    password: str
+
+class UserOut(UserBase):
+    pass
+
+class UserInDB(UserBase):
+    hashed_password: str
+
+"""
+
+@app.post("/login/")
+async def login(username: Annotated[str, Form()], password: Annotated[str, Form()]): #Mexendo com Formulários
+    return {"username": username}
+
+def common_parameters(q: str | None = None, skip: int = 0, limit: int = 100):
+    return {"q": q, "skip": skip, "limit": limit}
+
+
+@app.get("/dep1/")
+def read_items(commons: Annotated[dict, Depends(common_parameters)]):
+    return commons
+
+
+@app.get("/dep2/")
+def read_users(commons: Annotated[dict, Depends(common_parameters)]):
+    return commons
