@@ -3,6 +3,7 @@ from enum import Enum
 from pydantic import BaseModel, Field, HttpUrl
 from typing import Annotated, Any
 from fastapi.responses import RedirectResponse
+from fastapi.security import OAuth2PasswordBearer
 
 
 app = FastAPI() #Criando o ponto de interação da API
@@ -196,7 +197,7 @@ def read_cookie(ads_id: Annotated[str | None, Cookie()] = None):
 
 class UserIn(BaseModel):
     username: str
-    password: str
+    password: str 
     email: str
     full_name: str | None = None
 
@@ -271,3 +272,32 @@ def read_items(commons: Annotated[dict, Depends(common_parameters)]):
 @app.get("/dep2/")
 def read_users(commons: Annotated[dict, Depends(common_parameters)]):
     return commons
+
+#Security
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+@app.get("/security/", tags=["security"])
+def read_security(token :Annotated[str, Depends(oauth2_scheme)]):
+    return {"token" : token}
+
+class User(BaseModel):
+    username: str
+    email: str | None = None
+    full_name: str | None = None
+    disabled: bool | None = None
+
+def fake_decode_token(token):
+    return User(
+        username=token + "fakedecoded", email="john@example.com", full_name="John Doe"
+    )
+
+
+def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
+    user = fake_decode_token(token)
+    return user
+
+
+@app.get("/security/me", tags=["security"])
+def read_users_me(current_user: Annotated[User, Depends(get_current_user)]):
+    return current_user
