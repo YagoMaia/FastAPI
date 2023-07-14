@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Query, Path, Body, Cookie, Form, Depends
+from fastapi import FastAPI, Query, Path, Body, Cookie, Form, Depends, APIRouter, BackgroundTasks
 from enum import Enum 
 from pydantic import BaseModel, Field, HttpUrl
 from typing import Annotated, Any
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer
-
+from Sql_Model.db import select_regions_id as select_id, select_regions
+from fastapi.testclient import TestClient
 
 app = FastAPI() #Criando o ponto de interação da API
 
@@ -39,7 +40,7 @@ class ModelName(str, Enum):
     resnet = "resnet"
     lenet = "lenet"
 
-@app.get("/models/{model_name}")
+@app.get("/models/{model_name}", tags=["user"])
 def get_model(model_name : ModelName):
     if model_name is ModelName.alexnet: #comparando se o model_name é igual ao ModelName.alexnet que seria o valor de alexnet
         return {"Model Name" : model_name, "mensage" : "Someone"}
@@ -49,7 +50,7 @@ def get_model(model_name : ModelName):
 
 #Tem como usar um caminho como parâmetro
 
-@app.get("/files/{file_path:path}")
+@app.get("/files/{file_path:path}", tags=["path"])
 def read_file(file_path : str):
     return {"Path" : file_path}
 
@@ -120,7 +121,7 @@ def create_item(item_id: int, item: Item):
 #Additional validation
 #Só tem como usar o query com o Annotated? -> Não, fica melhor usar com o Annotated
 
-@app.get("/query/")
+@app.get("/query/", tags=["query"])
 def read_query(q : Annotated[str | None, Query(max_length=50, min_length=3)] = None): #Restrição de tamanho -> Máximo de 50
     results = {"items": [{"item_id": "Foo"}, {"item_id": "Bar"}]}
     if q:
@@ -129,7 +130,7 @@ def read_query(q : Annotated[str | None, Query(max_length=50, min_length=3)] = N
 
 #Annotated ge(greater or equal), le(less or equal) gt(greater than), lt(less than) funciona para float também
 
-@app.get("/path/{item_id}")
+@app.get("/path/{item_id}", tags=["path"])
 def read_item4(
     item_id : Annotated[int, Path(title="The id of the item to get", ge=5)],
     q : Annotated[str | None, Query(alias="item-query")] = None,
@@ -144,7 +145,7 @@ class User(BaseModel):
     username : str
     full_name :str | None = None
 
-@app.put("/put/") 
+@app.put("/put/", tags=["item"]) 
 def update_item(
     item_id : int, 
     item : Annotated[Item, Body(embed=False)], 
@@ -191,7 +192,7 @@ def create_offer(offer:Offer) -> Offer:
 
 #Cookie Parameters
 
-@app.get("/cookie/")
+@app.get("/cookie/", tags=["cookies"])
 def read_cookie(ads_id: Annotated[str | None, Cookie()] = None):
     return {"ads_id": ads_id}
 
@@ -301,3 +302,36 @@ def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
 @app.get("/security/me", tags=["security"])
 def read_users_me(current_user: Annotated[User, Depends(get_current_user)]):
     return current_user
+
+#SqlModel
+
+@app.get("/database/{region_id}", tags=["db"])
+def read_data_base(region_id : int):
+    regions = {"Teste" : "Teste"}
+    return select_id(region_id)
+
+@app.get("/database/region/", tags=["db"])
+def read_table():
+    return select_regions()
+
+"""router = APIRouter(
+prefix = "/router",
+tags = ["router"],
+) Já deixa prefixado
+
+@router.get("/router/", tags=["router"])
+def read_user():
+    return [{"username": "Rick"}, {"username": "Morty"}]"""
+
+
+#Background Task's
+
+def write_notification(email : str, mensage = ""):
+    with open("log.txt", mode = "w") as email_file:
+        content = f"Notification for {email} : {mensage}"
+        email_file.write(content)
+
+@app.post("/send-notification/{email}", tags = ["Back"])
+def send_notification(email : str, background_taks : BackgroundTasks):
+    background_taks.add_task(write_notification, email, mensage = "Some Notifcation")
+    return {"mensage" : "Notification sent in the background"}
